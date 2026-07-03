@@ -2,16 +2,22 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  NotFoundException
-} from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import bcrypt from 'bcrypt';
-import { Repository } from 'typeorm';
+  NotFoundException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import bcrypt from "bcrypt";
+import { Repository } from "typeorm";
 
-import { User, UserRole } from '../users/entities/user.entity';
-import { BillingRecord, BillingType } from '../billing/entities/billing-record.entity';
-import { Company, PLAN_CONFIG, PlanType } from './entities/company.entity';
-import { RecruiterProfile, RecruiterRole } from './entities/recruiter-profile.entity';
+import { User, UserRole } from "../users/entities/user.entity";
+import {
+  BillingRecord,
+  BillingType,
+} from "../billing/entities/billing-record.entity";
+import { Company, PLAN_CONFIG, PlanType } from "./entities/company.entity";
+import {
+  RecruiterProfile,
+  RecruiterRole,
+} from "./entities/recruiter-profile.entity";
 
 interface CreateCompanyDto {
   name: string;
@@ -26,13 +32,15 @@ interface CreateCompanyDto {
 export class CompaniesService {
   constructor(
     @InjectRepository(Company) private readonly companies: Repository<Company>,
-    @InjectRepository(RecruiterProfile) private readonly profiles: Repository<RecruiterProfile>,
+    @InjectRepository(RecruiterProfile)
+    private readonly profiles: Repository<RecruiterProfile>,
     @InjectRepository(User) private readonly users: Repository<User>,
-    @InjectRepository(BillingRecord) private readonly billing: Repository<BillingRecord>
+    @InjectRepository(BillingRecord)
+    private readonly billing: Repository<BillingRecord>,
   ) {}
 
   findAll() {
-    return this.companies.find({ order: { createdAt: 'DESC' } });
+    return this.companies.find({ order: { createdAt: "DESC" } });
   }
 
   async createWithOwner(dto: CreateCompanyDto) {
@@ -52,13 +60,18 @@ export class CompaniesService {
         jobsPerMonth: planCfg.jobsPerMonth === -1 ? 9999 : planCfg.jobsPerMonth,
         jobsPostedThisMonth: 0,
         lastJobResetAt: new Date(),
-        ownerId: dto.ownerId
-      })
+        ownerId: dto.ownerId,
+      }),
     );
 
     const owner = await this.users.findOneByOrFail({ id: dto.ownerId });
     await this.profiles.save(
-      this.profiles.create({ user: owner, company, companyRole: RecruiterRole.Owner, isActive: true })
+      this.profiles.create({
+        user: owner,
+        company,
+        companyRole: RecruiterRole.Owner,
+        isActive: true,
+      }),
     );
 
     return company;
@@ -67,18 +80,20 @@ export class CompaniesService {
   async getMyCompany(userId: string) {
     const profile = await this.profiles.findOne({
       where: { user: { id: userId }, isActive: true },
-      relations: { company: true, user: true }
+      relations: { company: true, user: true },
     });
-    if (!profile) throw new NotFoundException('Nenhuma empresa associada a este usuário.');
+    if (!profile)
+      throw new NotFoundException("Nenhuma empresa associada a este usuário.");
     return profile.company;
   }
 
   async getMyProfile(userId: string) {
     const profile = await this.profiles.findOne({
       where: { user: { id: userId }, isActive: true },
-      relations: { company: true, user: true }
+      relations: { company: true, user: true },
     });
-    if (!profile) throw new NotFoundException('Perfil de recrutador não encontrado.');
+    if (!profile)
+      throw new NotFoundException("Perfil de recrutador não encontrado.");
     return profile;
   }
 
@@ -87,18 +102,18 @@ export class CompaniesService {
     return this.profiles.find({
       where: { company: { id: company.id } },
       relations: { user: true, company: true },
-      order: { createdAt: 'ASC' }
+      order: { createdAt: "ASC" },
     });
   }
 
   async addSeat(
     userId: string,
-    dto: { name: string; email: string; password: string; cardLast4?: string }
+    dto: { name: string; email: string; password: string; cardLast4?: string },
   ) {
     const company = await this.getMyCompany(userId);
     const totalSeats = company.seatsAllowed + company.extraSeats;
     const currentSeats = await this.profiles.count({
-      where: { company: { id: company.id }, isActive: true }
+      where: { company: { id: company.id }, isActive: true },
     });
 
     let chargeExtra = false;
@@ -121,22 +136,28 @@ export class CompaniesService {
           email: dto.email,
           passwordHash: await bcrypt.hash(dto.password, 10),
           role: UserRole.Recruiter,
-          roles: [UserRole.Recruiter]
-        })
+          roles: [UserRole.Recruiter],
+        }),
       );
     }
 
     // Check not already in company
     const existing = await this.profiles.findOne({
-      where: { user: { id: manager.id }, company: { id: company.id } }
+      where: { user: { id: manager.id }, company: { id: company.id } },
     });
     if (existing) {
-      if (existing.isActive) throw new ConflictException('Este usuário já é gestor desta empresa.');
+      if (existing.isActive)
+        throw new ConflictException("Este usuário já é gestor desta empresa.");
       existing.isActive = true;
       await this.profiles.save(existing);
     } else {
       await this.profiles.save(
-        this.profiles.create({ user: manager, company, companyRole: RecruiterRole.Manager, isActive: true })
+        this.profiles.create({
+          user: manager,
+          company,
+          companyRole: RecruiterRole.Manager,
+          isActive: true,
+        }),
       );
     }
 
@@ -150,10 +171,10 @@ export class CompaniesService {
           type: BillingType.ExtraSeat,
           amount: planCfg.extraSeatPrice,
           description: `Seat adicional — ${dto.email}`,
-          status: 'authorized',
+          status: "authorized",
           cardLast4: dto.cardLast4,
-          metadata: { managerEmail: dto.email }
-        })
+          metadata: { managerEmail: dto.email },
+        }),
       );
     }
 
@@ -164,11 +185,13 @@ export class CompaniesService {
     const company = await this.getMyCompany(userId);
     const profile = await this.profiles.findOne({
       where: { id: profileId, company: { id: company.id } },
-      relations: { user: true }
+      relations: { user: true },
     });
-    if (!profile) throw new NotFoundException('Gestor não encontrado.');
+    if (!profile) throw new NotFoundException("Gestor não encontrado.");
     if (profile.companyRole === RecruiterRole.Owner) {
-      throw new BadRequestException('Não é possível remover o proprietário da empresa.');
+      throw new BadRequestException(
+        "Não é possível remover o proprietário da empresa.",
+      );
     }
     profile.isActive = false;
     return this.profiles.save(profile);
@@ -177,7 +200,12 @@ export class CompaniesService {
   async subscribeToPlan(
     userId: string,
     plan: PlanType,
-    billingInfo: { cardNumber: string; cardName: string; cardExpiry: string; cardCvv: string }
+    billingInfo: {
+      cardNumber: string;
+      cardName: string;
+      cardExpiry: string;
+      cardCvv: string;
+    },
   ) {
     const company = await this.getMyCompany(userId);
     const planCfg = PLAN_CONFIG[plan];
@@ -186,54 +214,77 @@ export class CompaniesService {
     company.planStartedAt = new Date();
     company.planExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     company.seatsAllowed = planCfg.seats === -1 ? 9999 : planCfg.seats;
-    company.jobsPerMonth = planCfg.jobsPerMonth === -1 ? 9999 : planCfg.jobsPerMonth;
+    company.jobsPerMonth =
+      planCfg.jobsPerMonth === -1 ? 9999 : planCfg.jobsPerMonth;
     company.extraSeats = 0;
     company.extraJobs = 0;
     await this.companies.save(company);
 
-    const last4 = billingInfo.cardNumber.replace(/\s/g, '').slice(-4);
+    const last4 = billingInfo.cardNumber.replace(/\s/g, "").slice(-4);
     await this.billing.save(
       this.billing.create({
         company,
         type: BillingType.Subscription,
         amount: planCfg.price,
         description: `Assinatura Workou ${planCfg.label} — mensal`,
-        status: 'authorized',
+        status: "authorized",
         cardLast4: last4,
-        metadata: { plan, cardName: billingInfo.cardName }
-      })
+        metadata: { plan, cardName: billingInfo.cardName },
+      }),
     );
 
     return { success: true, company, plan: planCfg };
   }
 
-  async buyExtraJob(userId: string, billingInfo: { cardLast4?: string }) {
+  async buyExtraJob(
+    userId: string,
+    profileId: string,
+    billingInfo: { cardLast4?: string },
+  ) {
     const company = await this.getMyCompany(userId);
     const planCfg = PLAN_CONFIG[company.plan ?? PlanType.Essencial];
 
-    company.extraJobs += 1;
-    await this.companies.save(company);
+    // Find the target manager profile
+    const targetProfile = await this.profiles.findOne({
+      where: { id: profileId, company: { id: company.id }, isActive: true },
+      relations: { user: true },
+    });
+    if (!targetProfile) {
+      throw new NotFoundException("Gestor não encontrado na empresa.");
+    }
+
+    // Increment extra jobs for this specific manager
+    targetProfile.extraJobsAllowed += 1;
+    await this.profiles.save(targetProfile);
 
     await this.billing.save(
       this.billing.create({
         company,
         type: BillingType.ExtraJob,
         amount: planCfg.extraJobPrice,
-        description: 'Vaga adicional avulsa',
-        status: 'authorized',
+        description: `Vaga adicional avulsa para ${targetProfile.user.name}`,
+        status: "authorized",
         cardLast4: billingInfo.cardLast4,
-        metadata: { plan: company.plan }
-      })
+        metadata: {
+          plan: company.plan,
+          managerId: profileId,
+          managerName: targetProfile.user.name,
+        },
+      }),
     );
 
-    return { success: true, chargedAmount: planCfg.extraJobPrice };
+    return {
+      success: true,
+      chargedAmount: planCfg.extraJobPrice,
+      assignedTo: targetProfile.user.name,
+    };
   }
 
   async getBillingRecords(userId: string) {
     const company = await this.getMyCompany(userId);
     return this.billing.find({
       where: { company: { id: company.id } },
-      order: { createdAt: 'DESC' }
+      order: { createdAt: "DESC" },
     });
   }
 }
