@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -46,6 +46,7 @@ ${text.substring(0, 12000)}
 
 @Injectable()
 export class ResumesService {
+  private readonly logger = new Logger(ResumesService.name);
   private groq: Groq;
 
   constructor(
@@ -81,25 +82,48 @@ export class ResumesService {
     );
   }
 
+  private static readonly MODELS = ['openai/gpt-oss-120b', 'qwen/qwen3.6-27b'];
+
+  private isModelUnavailableError(err: any): boolean {
+    const code = err?.error?.code ?? err?.code;
+    return err?.status === 404 || code === 'model_not_found' || code === 'model_decommissioned';
+  }
+
   private async extractWithAI(text: string): Promise<Record<string, any>> {
-    let raw: string;
-    try {
-      const completion = await this.groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          {
-            role: 'user',
-            content: EXTRACT_PROMPT(text)
-          }
-        ],
-        temperature: 0.1,
-        max_tokens: 4096,
-        response_format: { type: 'json_object' }
-      });
-      raw = completion.choices[0]?.message?.content ?? '';
-    } catch (err: any) {
+    let raw = '';
+    let lastError: any;
+
+    for (const [index, model] of ResumesService.MODELS.entries()) {
+      try {
+        const completion = await this.groq.chat.completions.create({
+          model,
+          messages: [
+            {
+              role: 'user',
+              content: EXTRACT_PROMPT(text)
+            }
+          ],
+          temperature: 0.1,
+          max_tokens: 4096,
+          response_format: { type: 'json_object' }
+        });
+        raw = completion.choices[0]?.message?.content ?? '';
+        if (index > 0) {
+          this.logger.warn(`Modelo principal indisponível, resposta obtida via fallback "${model}".`);
+        }
+        lastError = undefined;
+        break;
+      } catch (err: any) {
+        lastError = err;
+        if (!this.isModelUnavailableError(err)) {
+          break;
+        }
+      }
+    }
+
+    if (lastError) {
       throw new InternalServerErrorException(
-        `Falha na chamada ao Groq: ${err?.message ?? 'erro desconhecido'}`
+        `Falha na chamada ao Groq (modelos tentados: ${ResumesService.MODELS.join(', ')}): ${lastError?.message ?? 'erro desconhecido'}`
       );
     }
 
