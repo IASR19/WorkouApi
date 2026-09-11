@@ -14,6 +14,7 @@ import { RecruiterProfile } from "../companies/entities/recruiter-profile.entity
 import { Company } from "../companies/entities/company.entity";
 import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
 import { paginate } from "../../common/dto/paginated-result";
+import { MatchesService } from "../matches/matches.service";
 
 @Injectable()
 export class JobsService {
@@ -22,6 +23,7 @@ export class JobsService {
     @InjectRepository(RecruiterProfile)
     private readonly profiles: Repository<RecruiterProfile>,
     @InjectRepository(Company) private readonly companies: Repository<Company>,
+    private readonly matchesService: MatchesService,
   ) {}
 
   async findAll(userId: string | undefined, pagination: PaginationQueryDto) {
@@ -96,7 +98,9 @@ export class JobsService {
   async update(id: string, userId: string, dto: UpdateJobDto) {
     const job = await this.assertCanManageJob(userId, id);
     Object.assign(job, dto);
-    return this.jobs.save(job);
+    const saved = await this.jobs.save(job);
+    await this.matchesService.generateForJob(saved);
+    return saved;
   }
 
   async setStatus(id: string, userId: string, status: JobStatus) {
@@ -176,6 +180,8 @@ export class JobsService {
     // Increment company's counter
     company.jobsPostedThisMonth += 1;
     await this.companies.save(company);
+
+    await this.matchesService.generateForJob(job);
 
     return job;
   }

@@ -113,6 +113,98 @@ export class MatchesService {
     });
   }
 
+  private calculateMatch(candidate: Candidate, job: Job): { score: number; reason: string } | null {
+    const candidateSkills = candidate.skills || [];
+    const required = job.requiredSkills || [];
+    let skillScore = 0;
+    if (required.length > 0) {
+      const matched = required.filter(s =>
+        candidateSkills.some(cs =>
+          cs.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(cs.toLowerCase())
+        )
+      );
+      skillScore = Math.round((matched.length / required.length) * 70);
+    } else {
+      skillScore = 70;
+    }
+
+    let workModelScore = 0;
+    if (candidate.workModel && job.workModel) {
+      const cModel = candidate.workModel.toLowerCase();
+      const jModel = job.workModel.toLowerCase();
+      workModelScore = cModel === jModel ? 15 : cModel === 'remote' || jModel === 'remote' ? 10 : 5;
+    } else {
+      workModelScore = 15;
+    }
+
+    let salaryScore = 15;
+    if (candidate.desiredSalary && job.salaryMax && candidate.desiredSalary > job.salaryMax) {
+      const over = candidate.desiredSalary - job.salaryMax;
+      salaryScore = Math.max(0, 15 - Math.round((over / job.salaryMax) * 15));
+    }
+
+    const totalScore = skillScore + workModelScore + salaryScore;
+    if (totalScore < 45) return null;
+
+    let scoreReason = 'Alinhamento parcial na stack e discrepâncias em preferências.';
+    if (totalScore >= 85) scoreReason = 'Excelente alinhamento tecnológico, modelo de trabalho e salário compatível.';
+    else if (totalScore >= 70) scoreReason = 'Ótimo alinhamento com pequenos desvios em modelo de trabalho ou salário.';
+    else if (totalScore >= 50) scoreReason = 'Compatibilidade mediana, necessita avaliação detalhada.';
+
+    return { score: totalScore, reason: scoreReason };
+  }
+
+  /**
+   * Creates, updates or removes the single match row for a (job, candidate) pair,
+   * so re-running this for the same pair (job created, job edited, resume reprocessed)
+   * never produces duplicates and never wipes an already-decided match.
+   */
+  private async upsertMatch(job: Job, candidate: Candidate) {
+    const existing = await this.matches.findOne({
+      where: { job: { id: job.id }, candidate: { id: candidate.id } },
+    });
+    const result = this.calculateMatch(candidate, job);
+
+    if (!result) {
+      if (existing && existing.recruiterDecision === MatchDecision.Pending && existing.candidateDecision === MatchDecision.Pending) {
+        await this.matches.delete(existing.id);
+      }
+      return;
+    }
+
+    if (existing) {
+      existing.score = result.score;
+      existing.scoreReason = result.reason;
+      await this.matches.save(existing);
+      return;
+    }
+
+    await this.matches.save(
+      this.matches.create({
+        job,
+        candidate,
+        score: result.score,
+        scoreReason: result.reason,
+        recruiterDecision: MatchDecision.Pending,
+        candidateDecision: MatchDecision.Pending,
+      }),
+    );
+  }
+
+  async generateForJob(job: Job) {
+    const candidates = await this.candidates.find();
+    for (const candidate of candidates) {
+      await this.upsertMatch(job, candidate);
+    }
+  }
+
+  async generateForCandidate(candidate: Candidate) {
+    const jobs = await this.jobs.find({ relations: { company: true } });
+    for (const job of jobs) {
+      await this.upsertMatch(job, candidate);
+    }
+  }
+
   private async checkAndCreateConversation(match: Match) {
     if (match.isMutual) {
       const existing = await this.conversations.findOneBy({

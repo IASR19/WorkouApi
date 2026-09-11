@@ -6,9 +6,10 @@ import { JobsController } from "./jobs.controller";
 import { JobsService } from "./jobs.service";
 import { RecruiterProfile } from "../companies/entities/recruiter-profile.entity";
 import { Company } from "../companies/entities/company.entity";
+import { MatchesModule } from "../matches/matches.module";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Job, RecruiterProfile, Company])],
+  imports: [TypeOrmModule.forFeature([Job, RecruiterProfile, Company]), MatchesModule],
   controllers: [JobsController],
   providers: [JobsService],
 })
