@@ -44,7 +44,12 @@ export class CompaniesService {
   }
 
   async createWithOwner(dto: CreateCompanyDto) {
-    const plan = (dto.plan as PlanType) ?? PlanType.Essencial;
+    const requestedPlan = (dto.plan as PlanType) ?? PlanType.Essencial;
+    // Custom plans (Enterprise) are sales-negotiated and can never be granted through
+    // self-serve signup — fall back to the default self-serve plan instead.
+    const plan = PLAN_CONFIG[requestedPlan]?.custom
+      ? PlanType.Essencial
+      : requestedPlan;
     const planCfg = PLAN_CONFIG[plan];
 
     const company = await this.companies.save(
@@ -120,18 +125,9 @@ export class CompaniesService {
 
   async addSeat(
     userId: string,
-    dto: { name: string; email: string; password: string; cardLast4?: string },
+    dto: { name: string; email: string; password: string },
   ) {
     const company = await this.getMyCompany(userId);
-    const totalSeats = company.seatsAllowed + company.extraSeats;
-    const currentSeats = await this.profiles.count({
-      where: { company: { id: company.id }, isActive: true },
-    });
-
-    let chargeExtra = false;
-    if (currentSeats >= totalSeats) {
-      chargeExtra = true;
-    }
 
     // Find or create user
     let manager = await this.users.findOne({ where: { email: dto.email } });
@@ -173,24 +169,7 @@ export class CompaniesService {
       );
     }
 
-    if (chargeExtra) {
-      const planCfg = PLAN_CONFIG[company.plan ?? PlanType.Essencial];
-      company.extraSeats += 1;
-      await this.companies.save(company);
-      await this.billing.save(
-        this.billing.create({
-          company,
-          type: BillingType.ExtraSeat,
-          amount: planCfg.extraSeatPrice,
-          description: `Seat adicional — ${dto.email}`,
-          status: "authorized",
-          cardLast4: dto.cardLast4,
-          metadata: { managerEmail: dto.email },
-        }),
-      );
-    }
-
-    return { success: true, chargedExtra: chargeExtra };
+    return { success: true };
   }
 
   async removeSeat(userId: string, profileId: string) {
@@ -222,6 +201,12 @@ export class CompaniesService {
     const company = await this.getMyCompany(userId);
     const planCfg = PLAN_CONFIG[plan];
 
+    if (planCfg.custom) {
+      throw new BadRequestException(
+        "O plano Enterprise é sob consulta. Entre em contato com nosso time comercial para negociar as condições.",
+      );
+    }
+
     company.plan = plan;
     company.planStartedAt = new Date();
     company.planExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -237,7 +222,7 @@ export class CompaniesService {
       this.billing.create({
         company,
         type: BillingType.Subscription,
-        amount: planCfg.price,
+        amount: planCfg.price ?? 0, // custom plans already rejected above; price is never null here
         description: `Assinatura Workou ${planCfg.label} — mensal`,
         status: "authorized",
         cardLast4: last4,

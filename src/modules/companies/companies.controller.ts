@@ -58,7 +58,7 @@ export class CompaniesController {
   addSeat(
     @Request() req: any,
     @Body()
-    body: { name: string; email: string; password: string; cardLast4?: string },
+    body: { name: string; email: string; password: string },
   ) {
     return this.companiesService.addSeat(req.user.sub, body);
   }

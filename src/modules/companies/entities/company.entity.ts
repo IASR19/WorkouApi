@@ -9,31 +9,36 @@ export enum PlanType {
   Enterprise = 'enterprise'
 }
 
+// Seats are always unlimited (no longer a billing axis — charging per RH login
+// discouraged the whole team from using the tool). The only billing axis is the
+// volume of jobs posted per month. Enterprise has no published fixed price: it's
+// negotiated with sales (see `custom` below) and `price` is `null` for it.
 export const PLAN_CONFIG: Record<PlanType, {
   label: string;
-  price: number;
+  price: number | null;
   seats: number;
   jobsPerMonth: number;
   extraSeatPrice: number;
   extraJobPrice: number;
   description: string;
   highlight?: boolean;
+  custom?: boolean;
 }> = {
   [PlanType.Essencial]: {
     label: 'Essencial',
     price: 299,
-    seats: 1,
+    seats: -1,
     jobsPerMonth: 3,
-    extraSeatPrice: 99,
+    extraSeatPrice: 0,
     extraJobPrice: 49,
     description: 'Para pequenas empresas que estão começando no recrutamento digital.'
   },
   [PlanType.Pro]: {
     label: 'Pro',
     price: 699,
-    seats: 3,
+    seats: -1,
     jobsPerMonth: 10,
-    extraSeatPrice: 89,
+    extraSeatPrice: 0,
     extraJobPrice: 39,
     description: 'Ideal para times de RH em crescimento com múltiplas vagas simultâneas.',
     highlight: true
@@ -41,20 +46,21 @@ export const PLAN_CONFIG: Record<PlanType, {
   [PlanType.Business]: {
     label: 'Business',
     price: 1499,
-    seats: 10,
+    seats: -1,
     jobsPerMonth: 30,
-    extraSeatPrice: 79,
+    extraSeatPrice: 0,
     extraJobPrice: 29,
     description: 'Para empresas com contratação constante e time dedicado de recrutamento.'
   },
   [PlanType.Enterprise]: {
     label: 'Enterprise',
-    price: 3999,
+    price: null,
     seats: -1, // unlimited
     jobsPerMonth: -1, // unlimited
     extraSeatPrice: 0,
     extraJobPrice: 0,
-    description: 'Solução completa para grandes corporações com necessidades ilimitadas.'
+    description: 'Solução sob medida para grandes corporações — negociado com o time comercial.',
+    custom: true
   }
 };
 
