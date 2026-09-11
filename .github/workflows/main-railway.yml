@@ -1,0 +1,97 @@
+name: Backend Main Railway
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: railway-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-test:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test -- --passWithNoTests
+
+      - name: Build application
+        run: npm run build
+
+  deploy-production:
+    name: Deploy Production
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Ensure database schema exists
+        run: |
+          node -e "
+            const { Client } = require('pg');
+            const client = new Client({
+              host: process.env.DATABASE_HOST,
+              port: parseInt(process.env.DATABASE_PORT || '5432'),
+              user: process.env.DATABASE_USER,
+              password: process.env.DATABASE_PASSWORD,
+              database: process.env.DATABASE_NAME,
+              ssl: process.env.DATABASE_HOST !== 'localhost' ? { rejectUnauthorized: false } : false
+            });
+            client.connect()
+              .then(() => client.query('CREATE SCHEMA IF NOT EXISTS \"workoudev\";'))
+              .then(() => { console.log('Schema ensured successfully'); client.end(); })
+              .catch(err => { console.error('Error ensuring schema:', err); process.exit(1); });
+          "
+        env:
+          DATABASE_HOST: ${{ secrets.DATABASE_HOST }}
+          DATABASE_PORT: ${{ secrets.DATABASE_PORT }}
+          DATABASE_USER: ${{ secrets.DATABASE_USER }}
+          DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+          DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run database migrations
+        run: npm run migration:run
+        env:
+          DATABASE_HOST: ${{ secrets.DATABASE_HOST }}
+          DATABASE_PORT: ${{ secrets.DATABASE_PORT }}
+          DATABASE_USER: ${{ secrets.DATABASE_USER }}
+          DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+          DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
+
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli
+
+      - name: Deploy to Railway (Production)
+        run: railway up --service ${{ secrets.RAILWAY_SERVICE_NAME }}
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
