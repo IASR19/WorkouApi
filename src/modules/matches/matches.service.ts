@@ -129,12 +129,45 @@ export class MatchesService {
     }
   }
 
-  async setRecruiterDecision(id: string, decision: MatchDecision) {
+  private async assertRecruiterOwnsJob(userId: string, jobId: string) {
+    const job = await this.jobs.findOne({
+      where: { id: jobId },
+      relations: { createdBy: true, company: true },
+    });
+    if (!job) throw new NotFoundException("Job not found");
+
+    const profile = await this.profiles.findOne({
+      where: { user: { id: userId }, isActive: true },
+      relations: { company: true },
+    });
+    if (!profile || profile.company.id !== job.company?.id) {
+      throw new ForbiddenException("You do not have permission to access this job");
+    }
+
+    const isOwner = profile.companyRole === "owner";
+    const isJobCreator = job.createdBy?.id === profile.id;
+    if (!isOwner && !isJobCreator) {
+      throw new ForbiddenException("You can only decide on matches for jobs you created");
+    }
+  }
+
+  private async assertCandidateOwnsMatch(userId: string, candidateId: string) {
+    const candidate = await this.candidates.findOne({
+      where: { id: candidateId },
+      relations: { user: true },
+    });
+    if (!candidate || candidate.user?.id !== userId) {
+      throw new ForbiddenException("You can only decide on your own matches");
+    }
+  }
+
+  async setRecruiterDecision(id: string, userId: string, decision: MatchDecision) {
     const match = await this.matches.findOne({
       where: { id },
       relations: { job: true, candidate: true },
     });
     if (!match) throw new NotFoundException("Match not found");
+    await this.assertRecruiterOwnsJob(userId, match.job.id);
 
     match.recruiterDecision = decision;
     match.isMutual =
@@ -146,12 +179,13 @@ export class MatchesService {
     return saved;
   }
 
-  async setCandidateDecision(id: string, decision: MatchDecision) {
+  async setCandidateDecision(id: string, userId: string, decision: MatchDecision) {
     const match = await this.matches.findOne({
       where: { id },
       relations: { job: true, candidate: true },
     });
     if (!match) throw new NotFoundException("Match not found");
+    await this.assertCandidateOwnsMatch(userId, match.candidate.id);
 
     match.candidateDecision = decision;
     match.isMutual =
@@ -163,7 +197,7 @@ export class MatchesService {
     return saved;
   }
 
-  async undoLastDecision(id: string, role: "recruiter" | "candidate") {
+  async undoLastDecision(id: string, userId: string, role: "recruiter" | "candidate") {
     const match = await this.matches.findOne({
       where: { id },
       relations: { job: true, candidate: true },
@@ -171,8 +205,10 @@ export class MatchesService {
     if (!match) throw new NotFoundException("Match not found");
 
     if (role === "recruiter") {
+      await this.assertRecruiterOwnsJob(userId, match.job.id);
       match.recruiterDecision = MatchDecision.Pending;
     } else {
+      await this.assertCandidateOwnsMatch(userId, match.candidate.id);
       match.candidateDecision = MatchDecision.Pending;
     }
     match.isMutual = false;

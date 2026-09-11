@@ -87,6 +87,18 @@ export class CompaniesService {
     return profile.company;
   }
 
+  async updateMyCompany(
+    userId: string,
+    dto: { name?: string; website?: string; industry?: string; logo?: string },
+  ) {
+    const company = await this.getMyCompany(userId);
+    if (dto.name) company.name = dto.name;
+    if (dto.website !== undefined) company.website = dto.website;
+    if (dto.industry !== undefined) company.industry = dto.industry;
+    if (dto.logo !== undefined) company.logo = dto.logo;
+    return this.companies.save(company);
+  }
+
   async getMyProfile(userId: string) {
     const profile = await this.profiles.findOne({
       where: { user: { id: userId }, isActive: true },

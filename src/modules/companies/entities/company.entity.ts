@@ -73,6 +73,9 @@ export class Company extends BaseEntity {
   @Column({ nullable: true })
   industry?: string;
 
+  @Column({ type: 'text', nullable: true })
+  logo?: string;
+
   @Column({ type: 'enum', enum: PlanType, nullable: true })
   plan?: PlanType;
 

@@ -20,6 +20,9 @@ export class User extends BaseEntity {
   @Column()
   name!: string;
 
+  @Column({ type: 'text', nullable: true })
+  avatar?: string;
+
   @Column({ type: 'enum', enum: UserRole, default: UserRole.Candidate })
   role!: UserRole;
 

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -7,9 +8,12 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 
 import { CreateJobDto } from "./dto/create-job.dto";
-import { Job } from "./entities/job.entity";
+import { UpdateJobDto } from "./dto/update-job.dto";
+import { Job, JobStatus } from "./entities/job.entity";
 import { RecruiterProfile } from "../companies/entities/recruiter-profile.entity";
 import { Company } from "../companies/entities/company.entity";
+import { PaginationQueryDto } from "../../common/dto/pagination-query.dto";
+import { paginate } from "../../common/dto/paginated-result";
 
 @Injectable()
 export class JobsService {
@@ -20,44 +24,91 @@ export class JobsService {
     @InjectRepository(Company) private readonly companies: Repository<Company>,
   ) {}
 
-  async findAll(userId?: string) {
-    // If no userId, return all jobs (public endpoint)
-    if (!userId) {
-      return this.jobs.find({
-        order: { createdAt: "DESC" },
-        relations: { company: true, createdBy: { user: true } },
-      });
+  async findAll(userId: string | undefined, pagination: PaginationQueryDto) {
+    const page = pagination.page ?? 1;
+    const limit = pagination.limit ?? 20;
+    const skip = (page - 1) * limit;
+    const relations = { company: true, createdBy: { user: true } } as const;
+    const order = { createdAt: "DESC" as const };
+
+    let where: Record<string, unknown> | undefined;
+
+    // Find recruiter profile to check role (only matters if a userId was provided)
+    const profile = userId
+      ? await this.profiles.findOne({
+          where: { user: { id: userId }, isActive: true },
+          relations: { company: true },
+        })
+      : null;
+
+    if (profile) {
+      // Owner sees all company jobs; manager sees only their own
+      where =
+        profile.companyRole === "owner"
+          ? { company: { id: profile.company.id } }
+          : { createdBy: { id: profile.id } };
     }
 
-    // Find recruiter profile to check role
+    const [items, total] = await this.jobs.findAndCount({
+      where,
+      order,
+      relations,
+      skip,
+      take: limit,
+    });
+
+    return paginate(items, total, page, limit);
+  }
+
+  async findOne(id: string) {
+    const job = await this.jobs.findOne({
+      where: { id },
+      relations: { company: true, createdBy: { user: true } },
+    });
+    if (!job) throw new NotFoundException("Vaga não encontrada");
+    return job;
+  }
+
+  private async assertCanManageJob(userId: string, jobId: string) {
+    const job = await this.jobs.findOne({
+      where: { id: jobId },
+      relations: { createdBy: true, company: true },
+    });
+    if (!job) throw new NotFoundException("Vaga não encontrada");
+
     const profile = await this.profiles.findOne({
       where: { user: { id: userId }, isActive: true },
       relations: { company: true },
     });
-
-    // If not a recruiter, return all jobs
-    if (!profile) {
-      return this.jobs.find({
-        order: { createdAt: "DESC" },
-        relations: { company: true, createdBy: { user: true } },
-      });
+    if (!profile || profile.company.id !== job.company?.id) {
+      throw new ForbiddenException("Você não tem permissão para gerenciar esta vaga.");
     }
 
-    // Owner sees all company jobs
-    if (profile.companyRole === "owner") {
-      return this.jobs.find({
-        where: { company: { id: profile.company.id } },
-        order: { createdAt: "DESC" },
-        relations: { company: true, createdBy: { user: true } },
-      });
+    const isOwner = profile.companyRole === "owner";
+    const isJobCreator = job.createdBy?.id === profile.id;
+    if (!isOwner && !isJobCreator) {
+      throw new ForbiddenException("Você só pode gerenciar vagas que você criou.");
     }
 
-    // Manager sees only their own jobs
-    return this.jobs.find({
-      where: { createdBy: { id: profile.id } },
-      order: { createdAt: "DESC" },
-      relations: { company: true, createdBy: { user: true } },
-    });
+    return job;
+  }
+
+  async update(id: string, userId: string, dto: UpdateJobDto) {
+    const job = await this.assertCanManageJob(userId, id);
+    Object.assign(job, dto);
+    return this.jobs.save(job);
+  }
+
+  async setStatus(id: string, userId: string, status: JobStatus) {
+    const job = await this.assertCanManageJob(userId, id);
+    job.status = status;
+    return this.jobs.save(job);
+  }
+
+  async remove(id: string, userId: string) {
+    const job = await this.assertCanManageJob(userId, id);
+    await this.jobs.softRemove(job);
+    return { success: true };
   }
 
   async create(dto: CreateJobDto, userId: string) {

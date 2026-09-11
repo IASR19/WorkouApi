@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import { json, urlencoded } from 'express';
 
 import { AppModule } from './app.module';
 
@@ -16,6 +17,9 @@ async function bootstrap() {
   app.setGlobalPrefix(apiPrefix);
   app.use(helmet());
   app.use(cookieParser());
+  // Express defaults to a 100kb body limit, too small for base64 avatar/logo uploads.
+  app.use(json({ limit: '5mb' }));
+  app.use(urlencoded({ extended: true, limit: '5mb' }));
   app.enableCors({
     credentials: true,
     origin: corsAllowlist.length > 0 ? corsAllowlist : true

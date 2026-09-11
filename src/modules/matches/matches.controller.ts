@@ -34,18 +34,18 @@ export class MatchesController {
   }
 
   @Patch(':id/recruiter-decision')
-  setRecruiterDecision(@Param('id') id: string, @Body() dto: DecisionDto) {
-    return this.matchesService.setRecruiterDecision(id, dto.decision);
+  setRecruiterDecision(@Param('id') id: string, @Body() dto: DecisionDto, @CurrentUser() user: UserPayload) {
+    return this.matchesService.setRecruiterDecision(id, user.sub, dto.decision);
   }
 
   @Patch(':id/candidate-decision')
-  setCandidateDecision(@Param('id') id: string, @Body() dto: DecisionDto) {
-    return this.matchesService.setCandidateDecision(id, dto.decision);
+  setCandidateDecision(@Param('id') id: string, @Body() dto: DecisionDto, @CurrentUser() user: UserPayload) {
+    return this.matchesService.setCandidateDecision(id, user.sub, dto.decision);
   }
 
   @Post(':id/undo')
-  undoLastDecision(@Param('id') id: string, @Body() dto: { role: 'recruiter' | 'candidate' }) {
-    return this.matchesService.undoLastDecision(id, dto.role);
+  undoLastDecision(@Param('id') id: string, @Body() dto: { role: 'recruiter' | 'candidate' }, @CurrentUser() user: UserPayload) {
+    return this.matchesService.undoLastDecision(id, user.sub, dto.role);
   }
 }
 

@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Request,
   UseGuards,
@@ -29,6 +30,15 @@ export class CompaniesController {
   @Get("me")
   getMyCompany(@Request() req: any) {
     return this.companiesService.getMyCompany(req.user.sub);
+  }
+
+  @UseGuards(JwtAuthGuard, CompanyOwnerGuard)
+  @Patch("me")
+  updateMyCompany(
+    @Request() req: any,
+    @Body() body: { name?: string; website?: string; industry?: string; logo?: string },
+  ) {
+    return this.companiesService.updateMyCompany(req.user.sub, body);
   }
 
   @UseGuards(JwtAuthGuard)
