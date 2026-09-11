@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
@@ -18,6 +19,8 @@ import { MatchesService } from "../matches/matches.service";
 
 @Injectable()
 export class JobsService {
+  private readonly logger = new Logger(JobsService.name);
+
   constructor(
     @InjectRepository(Job) private readonly jobs: Repository<Job>,
     @InjectRepository(RecruiterProfile)
@@ -25,6 +28,19 @@ export class JobsService {
     @InjectRepository(Company) private readonly companies: Repository<Company>,
     private readonly matchesService: MatchesService,
   ) {}
+
+  /**
+   * Match generation is a best-effort side effect: a failure here must never make
+   * an otherwise-successful job creation/update look like it failed to the caller
+   * (the job would already be persisted, quotas already consumed).
+   */
+  private async regenerateMatchesSafely(job: Job) {
+    try {
+      await this.matchesService.generateForJob(job);
+    } catch (err) {
+      this.logger.warn(`Failed to (re)generate matches for job ${job.id}: ${(err as Error).message}`);
+    }
+  }
 
   async findAll(userId: string | undefined, pagination: PaginationQueryDto) {
     const page = pagination.page ?? 1;
@@ -99,7 +115,7 @@ export class JobsService {
     const job = await this.assertCanManageJob(userId, id);
     Object.assign(job, dto);
     const saved = await this.jobs.save(job);
-    await this.matchesService.generateForJob(saved);
+    await this.regenerateMatchesSafely(saved);
     return saved;
   }
 
@@ -181,7 +197,7 @@ export class JobsService {
     company.jobsPostedThisMonth += 1;
     await this.companies.save(company);
 
-    await this.matchesService.generateForJob(job);
+    await this.regenerateMatchesSafely(job);
 
     return job;
   }

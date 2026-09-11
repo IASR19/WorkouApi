@@ -185,7 +185,13 @@ export class ResumesService {
     candidate.parsedPayload = parsedData;
     await this.candidates.save(candidate);
 
-    await this.matchesService.generateForCandidate(candidate);
+    // Best-effort: a failure recomputing matches must not make an otherwise-successful
+    // resume upload look like it failed (the candidate's profile is already updated above).
+    try {
+      await this.matchesService.generateForCandidate(candidate);
+    } catch (err) {
+      this.logger.warn(`Failed to (re)generate matches for candidate ${candidate.id}: ${(err as Error).message}`);
+    }
 
     await this.resumes.save(this.resumes.create({
       candidate,

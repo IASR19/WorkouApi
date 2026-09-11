@@ -193,16 +193,12 @@ export class MatchesService {
 
   async generateForJob(job: Job) {
     const candidates = await this.candidates.find();
-    for (const candidate of candidates) {
-      await this.upsertMatch(job, candidate);
-    }
+    await Promise.all(candidates.map(candidate => this.upsertMatch(job, candidate)));
   }
 
   async generateForCandidate(candidate: Candidate) {
     const jobs = await this.jobs.find({ relations: { company: true } });
-    for (const job of jobs) {
-      await this.upsertMatch(job, candidate);
-    }
+    await Promise.all(jobs.map(job => this.upsertMatch(job, candidate)));
   }
 
   private async checkAndCreateConversation(match: Match) {
